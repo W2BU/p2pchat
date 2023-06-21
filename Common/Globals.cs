@@ -10,5 +10,6 @@ namespace p2pchat.Common
     {
         public const int PORT = 47893;
         public const string SERVERADDRESS = "127.0.0.2";
+        public const int BUFFERSIZE = 4096;
     }
 }

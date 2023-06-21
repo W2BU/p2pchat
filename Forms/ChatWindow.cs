@@ -10,15 +10,15 @@ namespace p2pchat.Forms
         public IPEndPoint endPoint;
         public long id;
 
-        public ChatWindow(Client client, string name, IPEndPoint endPoint, long id)
+        public ChatWindow(Client _client, string _name, IPEndPoint _endPoint, long _id)
         {
             InitializeComponent();
-            this.client = client;
-            this.name = name;
-            this.endPoint = endPoint;
-            this.id = id;
-
-            chatWithLabel.Text = $"Chat with {name}";
+            this.client = _client;
+            this.name = _name;
+            this.endPoint = _endPoint;
+            this.id = _id;
+            chatWithLabel.Text = $"Chat With {name}";
+            chatWithLabel.Update();
         }
 
         public void ReceiveMessage(Common.Message M)

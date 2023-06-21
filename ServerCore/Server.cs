@@ -2,6 +2,7 @@
 using p2pchat.Common;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 
 namespace p2pchat.ServerCore
 {
@@ -14,14 +15,14 @@ namespace p2pchat.ServerCore
         static private TcpListener tcp = new TcpListener(tcpEndpoint);
 
         static private IPEndPoint udpEndpoint = new IPEndPoint(IPAddress.Any, Globals.PORT);
-        static private  UdpClient udp = new UdpClient(udpEndpoint);
+        static private UdpClient udp = new UdpClient(udpEndpoint);
 
         private ServerWindow window;
 
         public Server(ServerWindow form)
         {
             window = form;
-            window.outToLog("Server started");
+            window.OutToLog("Server started");
 
             LogHostIp();
 
@@ -34,15 +35,14 @@ namespace p2pchat.ServerCore
 
         public void Stop()
         {
-            window.outToLog("Shutting down...");
+            window.OutToLog("Shutting down...");
             BroadcastTCP(new Notification(NotificationsTypes.ServerShutdown, null));
-            tcp.Stop();
         }
 
         private void TcpListen()
         {
             tcp.Start();
-            window.outToLog("Tcp listener started");
+            window.OutToLog("Tcp listener started");
             while (true)
             {
                 try
@@ -52,25 +52,27 @@ namespace p2pchat.ServerCore
                     {
                         TcpClient client = _client as TcpClient;
                         client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-                        byte[] data = new byte[4096];
-                        int bytesCount = 0;
+                        
                         while (client.Connected)
                         {
+                            byte[] data = new byte[Globals.BUFFERSIZE];
+                            string readString = "";
+                            NetworkStream clientStream = client.GetStream();
                             try
                             {
-                                bytesCount = client.GetStream().Read(data, 0, data.Length);
+                                StreamReader reader = new StreamReader(clientStream);
+                                readString = reader.ReadLine();
                             }
                             catch
                             {
                                 DisconnectClient(client);
                             }
 
-                            if (bytesCount == 0)
-                                break;
-                            else if (client.Connected)
+                            if (client.Connected && readString != null)
                             {
+                                data = Encoding.UTF8.GetBytes(readString);
                                 IPackaged package = Serializer.deserializePackage(data);
-                                ProcessPackage(package, ProtocolType.Tcp, null, client);
+                                if (package != null) ProcessPackage(package, ProtocolType.Tcp, null, client);
                             }
                         }
 
@@ -82,14 +84,14 @@ namespace p2pchat.ServerCore
                 }
                 catch (Exception e)
                 {
-                    window.outToLog($"TCP Error: {e.Message}");
+                    window.OutToLog($"TCP Error: {e.Message}");
                 }
             }
         }
 
         private void UdpListen()
         {
-            window.outToLog("UDP Listener Started");
+            window.OutToLog("UDP Listener Started");
 
             while (true)
             {
@@ -101,7 +103,7 @@ namespace p2pchat.ServerCore
                 }
                 catch (Exception ex)
                 {
-                    window.outToLog($"UDP Error: {ex.Message}");
+                    window.OutToLog($"UDP Error: {ex.Message}");
                 }
 
                 if (receivedBytes != null)
@@ -118,7 +120,7 @@ namespace p2pchat.ServerCore
             ClientInfo clientInfo = clients.FirstOrDefault(x => x.client == client);
             if (clientInfo != null)
             {
-                window.outToLog($"Client Disconnected {clientInfo.client.Client.RemoteEndPoint}");
+                window.OutToLog($"Client Disconnected {clientInfo.client.Client.RemoteEndPoint}");
                 clients.Remove(clientInfo);
                 client.Close();
 
@@ -133,7 +135,6 @@ namespace p2pchat.ServerCore
             TcpClient client = null
         )
         {
-            IPackaged debug = package;
             if (package.typename == "ClientInfo")
             {
                 ClientInfo clientInfo = clients.FirstOrDefault(x => x.id == ((ClientInfo)package).id);
@@ -144,18 +145,18 @@ namespace p2pchat.ServerCore
                     clients.Add(clientInfo);
 
                     if (endPoint != null)
-                        window.outToLog($"Client Added: UDP EP: {endPoint.Address}:{endPoint.Port}, Name: {clientInfo.name}");
+                        window.OutToLog($"Client Added: UDP EP: {endPoint.Address}:{endPoint.Port}, Name: {clientInfo.name}");
                     else if (client != null)
-                        window.outToLog($"Client Added: TCP EP: {((IPEndPoint)client.Client.RemoteEndPoint).Address}:{((IPEndPoint)client.Client.RemoteEndPoint).Port}, Name: {clientInfo.name}");
+                        window.OutToLog($"Client Added: TCP EP: {((IPEndPoint)client.Client.RemoteEndPoint).Address}:{((IPEndPoint)client.Client.RemoteEndPoint).Port}, Name: {clientInfo.name}");
                 }
                 else
                 {
                     clientInfo.Update(package as ClientInfo);
 
                     if (endPoint != null)
-                        window.outToLog($"Client Updated: UDP EP: {endPoint.Address}:{endPoint.Port}, Name: {clientInfo.name}");
+                        window.OutToLog($"Client Updated: UDP EP: {endPoint.Address}:{endPoint.Port}, Name: {clientInfo.name}");
                     else if (client != null)
-                        window.outToLog($"Client Updated: TCP EP: {((IPEndPoint)client.Client.RemoteEndPoint).Address}:{((IPEndPoint)client.Client.RemoteEndPoint).Port}, Name: {clientInfo.name}");
+                        window.OutToLog($"Client Updated: TCP EP: {((IPEndPoint)client.Client.RemoteEndPoint).Address}:{((IPEndPoint)client.Client.RemoteEndPoint).Port}, Name: {clientInfo.name}");
                 }
 
                 if (endPoint != null)
@@ -184,7 +185,7 @@ namespace p2pchat.ServerCore
             }
             else if (package.typename == "Message")
             {
-                window.outToLog($"Message from {tcpEndpoint.Address}:{tcpEndpoint.Port}: {((Common.Message)package).content}");
+                window.OutToLog($"Message from {tcpEndpoint.Address}:{tcpEndpoint.Port}: {((Common.Message)package).content}");
             }
             else if (package.typename == "Req")
             {
@@ -203,8 +204,8 @@ namespace p2pchat.ServerCore
             {
                 byte[] data = Serializer.serializePackage(package);
 
-                NetworkStream NetStream = client.GetStream();
-                NetStream.Write(data, 0, data.Length);
+                NetworkStream netStream = client.GetStream();
+                netStream.Write(data, 0, data.Length);
             }
         }
 
@@ -225,7 +226,7 @@ namespace p2pchat.ServerCore
             string hostName = Dns.GetHostName();
             IPHostEntry ipEntry = Dns.GetHostEntry(hostName);
             IPAddress[] addr = ipEntry.AddressList;
-            window.outToLog($"Server address: {addr[addr.Length - 1]}");
+            window.OutToLog($"Server address: {addr[addr.Length - 1]}");
         }
 
     }

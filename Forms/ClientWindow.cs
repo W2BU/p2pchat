@@ -1,19 +1,21 @@
 using p2pchat.ClientCore;
 using p2pchat.Common;
 using p2pchat.Forms;
+using System.Net;
+using static p2pchat.ClientCore.Client;
 
 namespace p2pchat
 {
     public partial class ClientWindow : Form
     {
-        private Client client;
+        private Client localClient;
 
         List<ClientInfo> availableUsers = new List<ClientInfo>();
         List<ChatWindow> chatWindowList = new List<ChatWindow>();
         public ClientWindow()
         {
             InitializeComponent();
-            client = new Client(this);
+            localClient = new Client(this);
         }
 
         private void chatButton_Click(object sender, EventArgs e)
@@ -21,7 +23,7 @@ namespace p2pchat
             if (availableUsersList.SelectedItem != null)
             {
                 ClientInfo CI = availableUsers.FirstOrDefault(x => x.name == availableUsersList.SelectedItem.ToString());
-                client.ConnectToClient(CI);
+                localClient.ConnectToClient(CI);
             }
         }
         
@@ -33,18 +35,30 @@ namespace p2pchat
             Environment.Exit(0);
         }
 
-        public void addClient(ClientInfo clientInfo)
+        public void AddClient(ClientInfo clientInfo)
         {
             if (clientStatusBox.InvokeRequired)
             {
-                clientStatusBox.Invoke(new MethodInvoker(() => addClient(clientInfo)));
+                clientStatusBox.Invoke(new MethodInvoker(() => AddClient(clientInfo)));
                 return;
             }
-            availableUsersList.Items.Add(clientInfo.name);
-            availableUsers.Add(clientInfo);
+            if (clientInfo.id != localClient.localClientInfo.id)
+            {
+                availableUsersList.Items.Add(clientInfo.name);
+                availableUsers.Add(clientInfo);
+            }
+
         }
 
-        public void removeClient(ClientInfo clientInfo)
+        public void Disconnect(Client client)
+        {
+            connectButton.Text = "Connect";
+            connectButton.Update();
+            availableUsers.Clear();
+            foreach (ChatWindow c in chatWindowList) c.Close();
+        }
+
+        public void RemoveClient(ClientInfo clientInfo)
         {
             int i = -1;
             ChatWindow Chat = null;
@@ -59,7 +73,7 @@ namespace p2pchat
 
             if (clientStatusBox.InvokeRequired)
             {
-                clientStatusBox.Invoke(new MethodInvoker(() => removeClient(clientInfo)));
+                clientStatusBox.Invoke(new MethodInvoker(() => RemoveClient(clientInfo)));
                 return;
             }
 
@@ -72,11 +86,56 @@ namespace p2pchat
 
         }
 
-        public void outToLog(string output)
+        public void InitiateDialogue(ClientInfo sender, IPEndPoint endPoint)
+        {
+            Invoke(new MethodInvoker(() =>
+            {
+                ChatWindow chat = chatWindowList.FirstOrDefault(C => C.endPoint.Equals(endPoint));
+
+                if (chat == null)
+                {
+                    chat = new ChatWindow(localClient, sender.name, endPoint, sender.id);
+                    chatWindowList.Add(chat);
+                    chat.Closed += delegate { chatWindowList.Remove(chat); };
+                    chat.Show();
+                }
+                else
+                {
+                    chat.Focus();
+                    chat.BringToFront();
+                }
+            }));
+        }
+
+        public void ReceiveDialogue(IPEndPoint sender, MessageReceivedEventArgs messageArgs)
+        {
+            Invoke(new MethodInvoker(() =>
+            {
+                ChatWindow chat = chatWindowList.FirstOrDefault(C => C.endPoint.Equals(sender));
+
+                if (chat == null)
+                {
+                    chat = new ChatWindow(localClient, messageArgs.clientInfo.name, messageArgs.endPoint, messageArgs.clientInfo.id);
+                    chatWindowList.Add(chat);
+                    chat.Closed += delegate { chatWindowList.Remove(chat); };
+                    chat.Show();
+                }
+                else
+                {
+                    chat.Focus();
+                    chat.BringToFront();
+                }
+
+                chat.ReceiveMessage(messageArgs.message);
+            }));
+            
+        }
+
+        public void OutToLog(string output)
         {
             if (clientStatusBox.InvokeRequired)
             {
-                clientStatusBox.Invoke(new MethodInvoker(() => outToLog(output)));
+                clientStatusBox.Invoke(new MethodInvoker(() => OutToLog(output)));
                 return;
             }
             clientStatusBox.AppendText("\r\n" + output);
@@ -87,13 +146,15 @@ namespace p2pchat
         {
             if (enterUsernameBox.Text.Length != 0)
             {
-                client.UpdateUserName(enterUsernameBox.Text);
+                localClient.UpdateUserName(enterUsernameBox.Text);
             }
             else if (enterServerAddressBox.Text.Length != 0)
             {
-                client.UpdateServerAddress(enterServerAddressBox.Text);
+                localClient.UpdateServerAddress(enterServerAddressBox.Text);
             }
-            client.Connect();
+            localClient.ConnectDisconnect();
+            _ = connectButton.Text == "Disconnect" ? connectButton.Text = "Connect" : connectButton.Text = "Disconnect";
+            connectButton.Update();
         }
     }
 }

@@ -1,6 +1,8 @@
 ﻿using p2pchat.Common;
 using System.Net.Sockets;
 using System.Net;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Text;
 
 namespace p2pchat.ClientCore
 {
@@ -72,7 +74,7 @@ namespace p2pchat.ClientCore
             }
             catch (Exception ex)
             {
-                window.outToLog("Invalid Address. Default setting will be set.");
+                window.OutToLog("Invalid Address. Default setting will be set.");
             }
         }
 
@@ -84,7 +86,7 @@ namespace p2pchat.ClientCore
             }
             catch (Exception ex)
             {
-                window.outToLog("Invalid name");
+                window.OutToLog("Invalid name");
             }
         }
 
@@ -102,7 +104,7 @@ namespace p2pchat.ClientCore
             }
             catch (Exception ex)
             {
-                window.outToLog("Error on UDP Send: " + ex.Message);
+                window.OutToLog("Error on UDP Send: " + ex.Message);
             }
         }
 
@@ -114,17 +116,17 @@ namespace p2pchat.ClientCore
 
                 try
                 {
-                    NetworkStream NetStream = tcpClient.GetStream();
-                    NetStream.Write(Data, 0, Data.Length);
+                    NetworkStream netStream = tcpClient.GetStream();
+                    netStream.Write(Data, 0, Data.Length);
                 }
                 catch (Exception ex)
                 {
-                    window.outToLog($"Error on TCP Send: {ex.Message}");
+                    window.OutToLog($"Error on TCP Send: {ex.Message}");
                 }
             }
         }
 
-        public void Connect()
+        public void ConnectDisconnect()
         {
             if (tcpClient.Connected)
             {
@@ -133,12 +135,15 @@ namespace p2pchat.ClientCore
                 isTcpListen = false;
                 isUdpListen = false;
                 clients.Clear();
+                window.Disconnect(this);
+                window.OutToLog("Disconnected");
+
             }
             else
             {
                 try
                 {
-                    window.outToLog("Connected with Internet access adapter");
+                    window.OutToLog("Connected with Internet access adapter");
 
                     tcpClient = new TcpClient();
                     tcpClient.Client.Connect(serverEndpoint);
@@ -149,25 +154,25 @@ namespace p2pchat.ClientCore
                     SendMessageUdp(localClientInfo, serverEndpoint);
                     localClientInfo.internalEndPoint = udpClient.Client.LocalEndPoint.ToString();
 
-                    Thread.Sleep(1000);
+                    Thread.Sleep(500);
                     SendMessageTcp(localClientInfo);
 
-                    /*Thread keepAliveThread = new Thread(new ThreadStart(delegate
+                    Thread keepAliveThread = new Thread(new ThreadStart(delegate
                     {
                         while (tcpClient.Connected)
                         {
-                            Thread.Sleep(10000);
+                            Thread.Sleep(20000);
                             SendMessageTcp(new KeepAlive());
                         }
                     }));
 
                     keepAliveThread.IsBackground = true;
-                    keepAliveThread.Start();*/
+                    keepAliveThread.Start();
 
                 }
                 catch (Exception ex)
                 {
-                    window.outToLog($"Error when connecting {ex.Message}");
+                    window.OutToLog($"Error when connecting {ex.Message}");
                 }
             }
         }
@@ -176,26 +181,31 @@ namespace p2pchat.ClientCore
         {
             tcpListenThread = new Thread(new ThreadStart(delegate
             {
-                byte[] receivedBytes = new byte[4096];
-                int BytesRead = 0;
+                byte[] receivedBytes = new byte[Globals.BUFFERSIZE];
+                string readString = "";
+                NetworkStream clientStream = tcpClient.GetStream();
 
                 while (isTcpListen)
                 {
+                    byte[] data = new byte[Globals.BUFFERSIZE];
                     try
                     {
-                        BytesRead = tcpClient.GetStream().Read(receivedBytes, 0, receivedBytes.Length);
-
-                        if (BytesRead == 0)
+                        StreamReader reader = new StreamReader(clientStream);
+                        readString = reader.ReadLine();
+                        if (readString == null)
+                        {
                             break;
+                        }
                         else
                         {
-                            IPackaged package = Serializer.deserializePackage(receivedBytes);
-                            ProcessItem(package);
+                            data = Encoding.UTF8.GetBytes(readString);
+                            IPackaged package = Serializer.deserializePackage(data);
+                            if (package != null) ProcessPackage(package);
                         }
                     }
                     catch (Exception ex)
                     {
-                        window.outToLog($"Error on TCP Send: {ex.Message}");
+                        window.OutToLog($"Error on TCP Send: {ex.Message}");
                     }
                 }
             }));
@@ -220,12 +230,12 @@ namespace p2pchat.ClientCore
                         {
                             byte[] ReceivedBytes = udpClient.Receive(ref endPoint);
                             IPackaged package = Serializer.deserializePackage(ReceivedBytes);
-                            ProcessItem(package, endPoint);
+                            ProcessPackage(package, endPoint);
                         }
                     }
                     catch (Exception ex)
                     {
-                        window.outToLog($"Error on UDP Receive: {ex.Message}");
+                        window.OutToLog($"Error on UDP Receive: {ex.Message}");
                     }
                 }
             }));
@@ -236,7 +246,7 @@ namespace p2pchat.ClientCore
                 udpListenThread.Start();
         }
 
-        private void ProcessItem(IPackaged package, IPEndPoint endPoint = null)
+        private void ProcessPackage(IPackaged package, IPEndPoint endPoint = null)
         {
             if (package.typename == "Message")
             {
@@ -244,7 +254,11 @@ namespace p2pchat.ClientCore
                 ClientInfo clientInfo = clients.FirstOrDefault(x => x.id == package.id);
 
                 if (message.id == 0)
-                    window.outToLog(message.from + ": " + message.content);
+                    window.OutToLog(message.from + ": " + message.content);
+                if (message.id != 0 & endPoint != null & clientInfo != null)
+                {
+                    window.ReceiveDialogue(endPoint, new MessageReceivedEventArgs(clientInfo, message, endPoint));
+                }
 
             }
             else if (package.typename == "ClientInfo")
@@ -254,7 +268,7 @@ namespace p2pchat.ClientCore
                 if (clientInfo == null)
                 {
                     clients.Add(package as ClientInfo);
-                    window.addClient(package as ClientInfo);
+                    window.AddClient(package as ClientInfo);
                 }
                 else
                     clientInfo.Update(package as ClientInfo);
@@ -269,14 +283,16 @@ namespace p2pchat.ClientCore
 
                     if (CI != null)
                     {
-                        window.removeClient(CI);
+                        window.RemoveClient(CI);
                         clients.Remove(CI);
                     }
                 }
                 else if (N.Type == NotificationsTypes.ServerShutdown)
                 {
-                    window.outToLog($"Server shutting down.");
-                    Connect();
+                    window.OutToLog($"Server shutting down.");
+                    tcpClient.Close();
+                    isTcpListen = false;
+
                 }
             }
             else if (package.typename == "Req")
@@ -287,31 +303,32 @@ namespace p2pchat.ClientCore
 
                 if (clientInfo != null)
                 {
-                    window.outToLog($"Received Connection Request from: {clientInfo}");
+                    window.OutToLog($"Received Connection Request from: {clientInfo}");
 
                     IPEndPoint endPointResponded = FindReachableEndpoint(clientInfo);
 
                     if (endPointResponded != null)
                     {
-                        window.outToLog($"Connection Successfull to: {endPointResponded}");
+                        window.OutToLog($"Connection Successfull to: {endPointResponded}");
+                        window.InitiateDialogue(clientInfo, endPointResponded);
                     }
                 }
             }
             else if (package.typename == "Ack")
             {
-                Ack A = package as Ack;
+                Ack ack = package as Ack;
 
-                if (A.response)
-                    ackResponses.Add(A);
+                if (ack.response)
+                    ackResponses.Add(ack);
                 else
                 {
-                    ClientInfo clientInfo = clients.FirstOrDefault(x => x.id == A.id);
+                    ClientInfo clientInfo = clients.FirstOrDefault(x => x.id == ack.id);
 
                     var currentExternalEndPoint = IPEndPoint.Parse(clientInfo.externalEndPoint);
 
                     if (currentExternalEndPoint.Address.Equals(endPoint.Address) & currentExternalEndPoint.Port != endPoint.Port)
                     {
-                        window.outToLog($"Received Ack on Different Port ({endPoint.Port}). Updating ...");
+                        window.OutToLog($"Received Ack on Different Port ({endPoint.Port}). Updating ...");
 
                         currentExternalEndPoint.Port = endPoint.Port;
                     }
@@ -321,14 +338,14 @@ namespace p2pchat.ClientCore
 
                     if (!clientInfo.externalEndPoint.Equals(endPoint.Address) & !IPs.Contains(endPoint.Address.ToString()))
                     {
-                        window.outToLog($"Received Ack on New Address ({endPoint.Address}). Updating ...");
+                        window.OutToLog($"Received Ack on New Address ({endPoint.Address}). Updating ...");
 
                         clientInfo.internalAddresses.Add(endPoint.Address.ToString());
                     }
 
-                    A.response = true;
-                    A.recipientId = localClientInfo.id;
-                    SendMessageUdp(A, endPoint);
+                    ack.response = true;
+                    ack.recipientId = localClientInfo.id;
+                    SendMessageUdp(ack, endPoint);
                 }
             }
         }
@@ -339,7 +356,7 @@ namespace p2pchat.ClientCore
 
             SendMessageTcp(R);
 
-            window.outToLog("Sent Connection Request To: " + clientInfo.ToString());
+            window.OutToLog("Sent Connection Request To: " + clientInfo.ToString());
 
             Thread connect = new Thread(new ThreadStart(delegate
             {
@@ -347,18 +364,18 @@ namespace p2pchat.ClientCore
 
                 if (responsiveEndPoint != null)
                 {
-                    window.outToLog("Connection Successfull to: " + responsiveEndPoint.ToString());
+                    window.OutToLog("Connection Successfull to: " + responsiveEndPoint.ToString());
+                    window.InitiateDialogue(clientInfo, responsiveEndPoint);
                 }
             }));
 
             connect.IsBackground = true;
-
             connect.Start();
         }
 
         private IPEndPoint FindReachableEndpoint(ClientInfo clientInfo)
         {
-            window.outToLog("Attempting to Connect via LAN");
+            window.OutToLog("Attempting to Connect via LAN");
 
             for (int ip = 0; ip < clientInfo.internalAddresses.Count; ip++)
             {
@@ -374,20 +391,20 @@ namespace p2pchat.ClientCore
                     if (!tcpClient.Connected)
                         break;
 
-                    window.outToLog($"Sending Ack to {endPoint}. Attempt {i} of 3");
+                    window.OutToLog($"Sending Ack to {endPoint}. Attempt {i} of 3");
 
                     SendMessageUdp(new Ack(localClientInfo.id), endPoint);
                     Thread.Sleep(200);
 
-                    Ack responce = ackResponses.FirstOrDefault(a => a.recipientId == clientInfo.id);
+                    Ack response = ackResponses.FirstOrDefault(a => a.recipientId == clientInfo.id);
 
-                    if (responce != null)
+                    if (response != null)
                     {
-                        window.outToLog($"Received Ack Responce from {endPoint.ToString()}");
+                        window.OutToLog($"Received Ack Responce from {endPoint}");
 
                         clientInfo.connectionType = ConnectionTypes.LAN;
 
-                        ackResponses.Remove(responce);
+                        ackResponses.Remove(response);
 
                         return endPoint;
                     }
@@ -396,14 +413,14 @@ namespace p2pchat.ClientCore
 
             if (clientInfo.externalEndPoint != null)
             {
-                window.outToLog("Attempting to Connect via Internet");
+                window.OutToLog("Attempting to Connect via Internet");
 
                 for (int i = 1; i < 100; i++)
                 {
                     if (!tcpClient.Connected)
                         break;
 
-                    window.outToLog($"Sending Ack to {clientInfo.externalEndPoint}. Attempt {i} of 99");
+                    window.OutToLog($"Sending Ack to {clientInfo.externalEndPoint}. Attempt {i} of 99");
 
                     SendMessageUdp(new Ack(localClientInfo.id), IPEndPoint.Parse(clientInfo.externalEndPoint));
                     Thread.Sleep(300);
@@ -412,7 +429,7 @@ namespace p2pchat.ClientCore
 
                     if (responce != null)
                     {
-                        window.outToLog($"Received Ack New from {clientInfo.externalEndPoint}");
+                        window.OutToLog($"Received Ack New from {clientInfo.externalEndPoint}");
 
                         clientInfo.connectionType = ConnectionTypes.WAN;
 
@@ -422,11 +439,11 @@ namespace p2pchat.ClientCore
                     }
                 }
 
-                window.outToLog($"Connection to {clientInfo.name} failed");
+                window.OutToLog($"Connection to {clientInfo.name} failed");
             }
             else
             {
-                window.outToLog("Client's External EndPoint is Unknown");
+                window.OutToLog("Client's External EndPoint is Unknown");
             }
 
             return null;
@@ -436,13 +453,13 @@ namespace p2pchat.ClientCore
         {
             public Common.Message message { get; set; }
             public ClientInfo clientInfo { get; set; }
-            public IPEndPoint EstablishedEP { get; set; }
+            public IPEndPoint endPoint { get; set; }
 
-            public MessageReceivedEventArgs(ClientInfo _clientInfo, Common.Message _message, IPEndPoint _establishedEP)
+            public MessageReceivedEventArgs(ClientInfo _clientInfo, Common.Message _message, IPEndPoint _endPoint)
             {
                 clientInfo = _clientInfo;
                 message = _message;
-                EstablishedEP = _establishedEP;
+                endPoint = _endPoint;
             }
         }
     }

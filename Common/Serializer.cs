@@ -8,15 +8,15 @@ namespace p2pchat.Common
     {
         public static byte[] serializePackage(IPackaged package)
         {
-            var packageDataString = JsonConvert.SerializeObject(package);
-            byte[] data = Encoding.Unicode.GetBytes(packageDataString);
+            string packageDataString = JsonConvert.SerializeObject(package);
+            byte[] data = Encoding.UTF8.GetBytes(packageDataString + "\r\n"); // rn to separate messages
             return data;    
         }
 
         public static IPackaged deserializePackage(byte[] bytes)
         {
-            var decodedDataString = Encoding.Unicode.GetString(bytes);
-            var parsedObject = JObject.Parse(decodedDataString);
+            string decodedDataString = Encoding.UTF8.GetString(bytes);
+            JObject parsedObject = JObject.Parse(decodedDataString);
             string typeOfPackage = parsedObject["typename"].ToString().ToUpper();
             switch (typeOfPackage)
             {
@@ -28,6 +28,10 @@ namespace p2pchat.Common
                     return JsonConvert.DeserializeObject<Ack>(decodedDataString);
                 case "REQ":
                     return JsonConvert.DeserializeObject<Req>(decodedDataString);
+                case "KEEPALIVE":
+                    return JsonConvert.DeserializeObject<KeepAlive>(decodedDataString);
+                case "NOTIFICATION":
+                    return JsonConvert.DeserializeObject<Notification>(decodedDataString);
             }
             return null;
         }

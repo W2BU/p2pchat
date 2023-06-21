@@ -1,7 +1,5 @@
 ﻿using p2pchat.ServerCore;
-using System.Security.Cryptography;
-using System.Windows.Forms;
-using System.Xml.Schema;
+
 
 namespace p2pchat
 {
@@ -17,13 +15,14 @@ namespace p2pchat
         private void serverStopButton_Click(object sender, EventArgs e)
         {
             server.Stop();
+            Environment.Exit(0);
         }
 
-        public void outToLog(string output)
+        public void OutToLog(string output)
         {
             if (serverLogBox.InvokeRequired)
             {
-                serverLogBox.Invoke(new MethodInvoker(() => outToLog(output)));
+                serverLogBox.Invoke(new MethodInvoker(() => OutToLog(output)));
                 return;
             }
             serverLogBox.AppendText("\r\n" + output);
